@@ -4,4 +4,4 @@
  (kind ppx_rewriter)
  (preprocess
   (pps metaquot.ppx))
- (libraries ppxlib fmt hmap js_of_ocaml ppx_expjs_runtime))
+ (libraries ppxlib js_of_ocaml ppx_expjs_runtime))
