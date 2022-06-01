@@ -1,0 +1,3 @@
+(executable
+ (name ppx_expjs_standalone)
+ (libraries ppx_expjs ppxlib))

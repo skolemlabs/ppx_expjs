@@ -1,0 +1,6 @@
+(executable
+ (name ppx_expjs_example)
+ (modes js)
+ (libraries js_of_ocaml ppx_expjs.runtime)
+ (preprocess
+  (pps ppx_expjs)))

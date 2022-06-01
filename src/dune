@@ -1,0 +1,7 @@
+(library
+ (name ppx_expjs)
+ (public_name ppx_expjs)
+ (kind ppx_rewriter)
+ (preprocess
+  (pps metaquot.ppx))
+ (libraries ppxlib fmt hmap js_of_ocaml ppx_expjs_runtime))
