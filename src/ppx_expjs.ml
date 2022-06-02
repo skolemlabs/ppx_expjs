@@ -3,6 +3,7 @@ open Ast_builder.Default
 
 exception Unsupported_type of core_type
 exception Unsupported_pattern of pattern
+exception Invalid_payload of payload
 
 let get_loc () = !Ast_helper.default_loc
 let js_get_expr = [%expr Js_of_ocaml.Js.Unsafe.get]
@@ -12,20 +13,32 @@ let get_fun_name = function
   | { ppat_desc = Ppat_var { txt; _ }; _ } -> txt
   | _ -> failwith "Function must be named"
 
+let contains_attr attrs str =
+  List.exists (fun { attr_name = { txt; _ }; _ } -> txt = str) attrs
+
+let get_attr attrs str =
+  List.find (fun { attr_name = { txt; _ }; _ } -> txt = str) attrs
+
+let get_custom_conv = function
+  | { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } -> e
+  | { attr_payload; _ } -> raise (Invalid_payload attr_payload)
+
 let rec of_js = function
+  | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
+      let attr = get_attr ptyp_attributes "expjs.conv" in
+      Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.to_string]
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.to_bool]
   | [%type: int] -> Some [%expr Ppx_expjs_runtime.int_of_js]
   | [%type: float] -> Some [%expr Ppx_expjs_runtime.float_of_js]
-  | { ptyp_desc = Ptyp_constr ({ txt = [%lid option]; _ }, [ t ]); _ } -> 
-      (match of_js t with
-      | Some c -> Some [%expr fun v -> Option.map [%e c] (Js_of_ocaml.Js.Optdef.to_option v)]
-      | None -> Some [%expr Js_of_ocaml.Js.Optdef.to_option]
-      )
+  | { ptyp_desc = Ptyp_constr ({ txt = [%lid option]; _ }, [ t ]); _ } -> (
+      match of_js t with
+      | Some c ->
+          Some
+            [%expr
+              fun v -> Option.map [%e c] (Js_of_ocaml.Js.Optdef.to_option v)]
+      | None -> Some [%expr Js_of_ocaml.Js.Optdef.to_option])
   | _ -> None
-
-let contains_expjs =
-  List.exists (fun { attr_name = { txt; _ }; _ } -> txt = "expjs")
 
 let get_arg = function
   | {
@@ -97,7 +110,7 @@ let build_body fname args =
             ( Optional o,
               apply_opt_conv
               @@ pexp_apply ~loc js_get_expr
-                [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] ))
+                   [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] ))
       args
   in
   let loc = get_loc () in
@@ -128,15 +141,14 @@ class attribute_mapper =
                 let vbs' =
                   List.fold_left
                     (fun acc vb ->
-                      if contains_expjs vb.pvb_attributes then
+                      if contains_attr vb.pvb_attributes "expjs" then
                         let fname = get_fun_name vb.pvb_pat in
                         let args = collect_args vb.pvb_expr [] in
                         let fexpr = build_fun fname args in
                         let export = build_export fname fexpr in
                         let loc = get_loc () in
                         let expvb =
-                          value_binding ~loc ~pat:[%pat? ()]
-                            ~expr:export
+                          value_binding ~loc ~pat:[%pat? ()] ~expr:export
                         in
                         expvb :: acc
                       else acc)
