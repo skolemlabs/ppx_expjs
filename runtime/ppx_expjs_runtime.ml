@@ -1,8 +1,10 @@
 open Js_of_ocaml
 
-let get_opt obj key =
+exception Missing_required of string
+
+let get_required obj key =
   let v : _ Js.optdef = Js.Unsafe.get obj key in
-  Js.Optdef.to_option v
+  Js.Optdef.get v (fun () -> raise (Missing_required key))
 
 external int_of_js : float Js.t -> int = "%identity"
 external float_of_js : float Js.t -> int = "%identity"

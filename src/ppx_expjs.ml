@@ -6,8 +6,6 @@ exception Unsupported_pattern of pattern
 exception Invalid_payload of payload
 
 let get_loc () = !Ast_helper.default_loc
-let js_get_expr = [%expr Js_of_ocaml.Js.Unsafe.get]
-let ppx_expjs_get_opt_expr = [%expr Ppx_expjs_runtime.get_opt]
 
 let get_fun_name = function
   | { ppat_desc = Ppat_var { txt; _ }; _ } -> txt
@@ -19,11 +17,14 @@ let contains_attr attrs str =
 let get_attr attrs str =
   List.find (fun { attr_name = { txt; _ }; _ } -> txt = str) attrs
 
+(** Extracts the custom convertor from the attribute, and fails if the payload is malformed. *)
 let get_custom_conv = function
   | { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } -> e
   | { attr_payload; _ } -> raise (Invalid_payload attr_payload)
 
+(** Based on the type of the argument, generates/uses a known conversion from JS -> OCaml *)
 let rec of_js = function
+  (* If the user has specified a custom conversion on this type, always use it *)
   | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
       let attr = get_attr ptyp_attributes "expjs.conv" in
       Some (get_custom_conv attr)
@@ -31,6 +32,8 @@ let rec of_js = function
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.to_bool]
   | [%type: int] -> Some [%expr Ppx_expjs_runtime.int_of_js]
   | [%type: float] -> Some [%expr Ppx_expjs_runtime.float_of_js]
+  (* The following types are all recursive, i.e. they contain another type. In order to convert these,
+     we use functors like [Option.map] and recurse to determine how to convert the "boxed" type. *)
   | { ptyp_desc = Ptyp_constr ({ txt = [%lid option]; _ }, [ t ]); _ } -> (
       match of_js t with
       | Some c ->
@@ -67,7 +70,7 @@ let build_prototype args =
         let labelled = label <> Nolabel in
         let named' = named || labelled in
         let f' =
-          if labelled then f
+          if labelled || name = "()" then f
           else
             let parg = ppat_var ~loc { loc; txt = name } in
             let fexp = pexp_fun ~loc Nolabel None parg in
@@ -85,33 +88,37 @@ let build_prototype args =
 
 let build_body fname args =
   let eargs =
-    List.map
-      (fun (l, name, conv) ->
+    List.fold_left
+      (fun acc (l, name, conv) ->
         let loc = get_loc () in
         let apply_opt_conv exp =
           match conv with
           | Some c -> pexp_apply ~loc c [ (Nolabel, exp) ]
           | None -> exp
         in
-        match l with
-        | Nolabel -> (Nolabel, apply_opt_conv @@ evar ~loc name)
-        | Labelled l ->
+        match (name, l) with
+        | "()", _ -> (Nolabel, [%expr ()]) :: acc
+        | _, Nolabel -> (Nolabel, apply_opt_conv @@ evar ~loc name) :: acc
+        | _, Labelled l ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
             ( Labelled l,
               apply_opt_conv
-              @@ pexp_apply ~loc js_get_expr
+              @@ pexp_apply ~loc [%expr Ppx_expjs_runtime.get_required]
                    [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
-        | Optional o ->
+            :: acc
+        | _, Optional o ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
             ( Optional o,
               apply_opt_conv
-              @@ pexp_apply ~loc js_get_expr
-                   [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] ))
-      args
+              @@ pexp_apply ~loc [%expr Js_of_ocaml.Js.Unsafe.get]
+                   [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
+            :: acc)
+      [] args
+    |> List.rev
   in
   let loc = get_loc () in
   pexp_apply ~loc (evar ~loc fname) eargs
