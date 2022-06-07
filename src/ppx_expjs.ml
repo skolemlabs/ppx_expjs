@@ -3,19 +3,55 @@ open Ast_builder.Default
 
 exception Unsupported_type of core_type
 exception Unsupported_pattern of pattern
+exception Unsupported_expression of expression
 exception Invalid_payload of payload
 
 let get_loc () = !Ast_helper.default_loc
-
-let get_fun_name = function
-  | { ppat_desc = Ppat_var { txt; _ }; _ } -> txt
-  | _ -> failwith "Function must be named"
 
 let contains_attr attrs str =
   List.exists (fun { attr_name = { txt; _ }; _ } -> txt = str) attrs
 
 let get_attr attrs str =
   List.find (fun { attr_name = { txt; _ }; _ } -> txt = str) attrs
+
+let contains_field expr name =
+  match expr with
+  | { pexp_desc = Pexp_record (fields, _); _ } ->
+      List.exists
+        (fun (f, _) ->
+          match f with { txt = Lident n; _ } -> n = name | _ -> false)
+        fields
+  | e -> raise (Unsupported_expression e)
+
+let get_field expr name =
+  match expr with
+  | { pexp_desc = Pexp_record (fields, _); _ } ->
+      let _, e =
+        List.find
+          (fun (f, _) ->
+            match f with { txt = Lident n; _ } -> n = name | _ -> false)
+          fields
+      in
+      e
+  | e -> raise (Unsupported_expression e)
+
+(** Extracts the name of the function from the value binding *)
+let get_fun_name = function
+  | { pvb_pat = { ppat_desc = Ppat_var { txt; _ }; _ }; _ } -> txt
+  | { pvb_pat; _ } -> raise (Unsupported_pattern pvb_pat)
+
+(** Determine what we should export the value as. If the user has specified a [name], we use that. Otherwise, it's just the function name *)
+let get_exp_name = function
+  | {
+      pvb_attributes =
+        [ { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } ];
+      _;
+    }
+    when contains_field e "name" -> (
+      match get_field e "name" with
+      | { pexp_desc = Pexp_constant (Pconst_string (name, _, _)); _ } -> name
+      | e -> raise (Unsupported_expression e))
+  | vb -> get_fun_name vb
 
 (** Extracts the custom convertor from the attribute, and fails if the payload is malformed. *)
 let get_custom_conv = function
@@ -62,6 +98,7 @@ let rec collect_args expr curr =
       collect_args expr ((l, name, conv) :: curr)
   | _ -> List.rev curr
 
+(** Constructs the prototype of the lambda to be exported. *)
 let build_prototype args =
   let prototype, named =
     List.fold_left
@@ -70,6 +107,9 @@ let build_prototype args =
         let labelled = label <> Nolabel in
         let named' = named || labelled in
         let f' =
+          (* We skip unit arguments and labelled ones.
+             Unit arguments are not useful in the JS world, because there is no partial application.
+             Labelled arguments we bundle into the [labelled] arg, which is a JS object we access fields from. *)
           if labelled || name = "()" then f
           else
             let parg = ppat_var ~loc { loc; txt = name } in
@@ -80,12 +120,14 @@ let build_prototype args =
       ((fun e -> e), false)
       args
   in
+  (* If we found any named/labelled arguments, we add the [labelled] arg *)
   if named then
     let loc = get_loc () in
     let parg = ppat_var ~loc { loc; txt = "labelled" } in
     fun e -> pexp_fun ~loc Nolabel None parg (prototype e)
   else prototype
 
+(** Constructs the body of the function, which converts all the arguments and calls the OCaml function *)
 let build_body fname args =
   let eargs =
     List.fold_left
@@ -149,10 +191,11 @@ class attribute_mapper =
                   List.fold_left
                     (fun acc vb ->
                       if contains_attr vb.pvb_attributes "expjs" then
-                        let fname = get_fun_name vb.pvb_pat in
+                        let fname = get_fun_name vb in
+                        let ename = get_exp_name vb in
                         let args = collect_args vb.pvb_expr [] in
                         let fexpr = build_fun fname args in
-                        let export = build_export fname fexpr in
+                        let export = build_export ename fexpr in
                         let loc = get_loc () in
                         let expvb =
                           value_binding ~loc ~pat:[%pat? ()] ~expr:export

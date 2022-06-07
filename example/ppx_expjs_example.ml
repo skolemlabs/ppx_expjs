@@ -7,4 +7,4 @@ let g ~(x : int) ~(y : string) ?(z : (int[@expjs.conv Obj.magic]) option) () =
   print_endline
     (Printf.sprintf "ppx_expjs (g): x=%d y=%s z=%d" x (String.uppercase_ascii y)
        z)
-  [@@expjs]
+  [@@expjs { name = "g_js" }]
