@@ -205,7 +205,8 @@ class attribute_mapper =
                     [] vbs
                 in
                 let loc = get_loc () in
-                pstr_value ~loc r vbs' :: acc
+                (* This prevents a parsetree invariant where you have a let binding with no value *)
+                if vbs' <> [] then pstr_value ~loc r vbs' :: acc else acc
             | _ -> acc)
           [] s
       in
