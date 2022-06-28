@@ -90,6 +90,11 @@ let rec of_js = function
             [%expr
               fun v -> Option.map [%e c] (Js_of_ocaml.Js.Optdef.to_option v)]
       | None -> Some [%expr Js_of_ocaml.Js.Optdef.to_option])
+  | { ptyp_desc = Ptyp_constr ({ txt = [%lid array]; _ }, [ t ]); _ } -> (
+      match of_js t with
+      | Some c ->
+          Some [%expr fun v -> Array.map [%e c] (Js_of_ocaml.Js.to_array v)]
+      | None -> Some [%expr Js_of_ocaml.Js.Optdef.to_array])
   | _ -> None
 
 let rec to_js = function
@@ -98,6 +103,7 @@ let rec to_js = function
       let attr = get_attr ptyp_attributes "expjs.conv" in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.string]
+  | [%type: bool] -> Some [%expr Js_of_ocaml.Js.bool]
   | [%type: int] -> Some [%expr Ppx_expjs_runtime.int_to_js]
   | [%type: float] -> Some [%expr Ppx_expjs_runtime.float_to_js]
   | [%type: unit] -> Some [%expr fun () -> Js_of_ocaml.Js.undefined]
@@ -107,7 +113,14 @@ let rec to_js = function
           Some
             (* Map the value inside the option, then unbox it to make it a JS value *)
             [%expr fun v -> Js_of_ocaml.Js.Opt.option (Option.map [%e c] v)]
-      | None -> Some [%expr Js_of_ocaml.Js.Optdef.to_option])
+      | None -> Some [%expr Js_of_ocaml.Js.Optdef.option])
+  | { ptyp_desc = Ptyp_constr ({ txt = [%lid array]; _ }, [ t ]); _ } -> (
+      match to_js t with
+      | Some c ->
+          Some
+            (* Map the value inside the option, then unbox it to make it a JS value *)
+            [%expr fun v -> Js_of_ocaml.Js.array (Array.map [%e c] v)]
+      | None -> Some [%expr Js_of_ocaml.Js.Optdef.array])
   | _ -> None
 
 let get_arg = function
@@ -227,9 +240,7 @@ class attribute_mapper =
                       if contains_attr vb.pvb_attributes "expjs" then
                         let fname = get_var_name vb in
                         let ename = get_exp_name vb in
-                        let args, ret_typ =
-                          get_args_and_type vb.pvb_expr []
-                        in
+                        let args, ret_typ = get_args_and_type vb.pvb_expr [] in
                         let fexpr = build_fun fname args ret_typ in
                         let export = build_export ename fexpr in
                         let loc = get_loc () in
