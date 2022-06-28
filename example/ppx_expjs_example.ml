@@ -13,5 +13,7 @@ let g ~(x : int) ~(y : string) ?(z : (int[@expjs.conv Obj.magic]) option) () =
 let return_unit (a : unit) : unit = ignore a [@@expjs]
 let some_string () : string option = Some "a" [@@expjs]
 let none_string () : string option = None [@@expjs]
+let my_str : string = "my_string" [@@expjs]
+let my_int : int = 4 [@@expjs]
 let not_exported = 0xbeef
 let () = ignore not_exported

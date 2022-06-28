@@ -1,10 +1,19 @@
 open Ppxlib
 open Ast_builder.Default
 
-exception Unsupported_type of core_type
 exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
 exception Invalid_payload of payload
+
+let () =
+  Printexc.record_backtrace true;
+  Printexc.register_printer (function
+    | Unsupported_pattern p ->
+        Some (Format.asprintf "Unsupported_pattern: %a" Pprintast.pattern p)
+    | Unsupported_expression e ->
+        Some
+          (Format.asprintf "Unsupported_expression @ %a" Pprintast.expression e)
+    | _ -> None)
 
 let get_loc () = !Ast_helper.default_loc
 
@@ -36,9 +45,13 @@ let get_field expr name =
   | e -> raise (Unsupported_expression e)
 
 (** Extracts the name of the function from the value binding *)
-let get_fun_name = function
-  | { pvb_pat = { ppat_desc = Ppat_var { txt; _ }; _ }; _ } -> txt
-  | { pvb_pat; _ } -> raise (Unsupported_pattern pvb_pat)
+let get_var_name vb =
+  let rec helper = function
+    | { ppat_desc = Ppat_var { txt; _ }; _ } -> txt
+    | { ppat_desc = Ppat_constraint (p, _); _ } -> helper p
+    | p -> raise (Unsupported_pattern p)
+  in
+  helper vb.pvb_pat
 
 (** Determine what we should export the value as. If the user has specified a [name], we use that. Otherwise, it's just the function name *)
 let get_exp_name = function
@@ -51,7 +64,7 @@ let get_exp_name = function
       match get_field e "name" with
       | { pexp_desc = Pexp_constant (Pconst_string (name, _, _)); _ } -> name
       | e -> raise (Unsupported_expression e))
-  | vb -> get_fun_name vb
+  | vb -> get_var_name vb
 
 (** Extracts the custom convertor from the attribute, and fails if the payload is malformed. *)
 let get_custom_conv = function
@@ -85,6 +98,8 @@ let rec to_js = function
       let attr = get_attr ptyp_attributes "expjs.conv" in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.string]
+  | [%type: int] -> Some [%expr Ppx_expjs_runtime.int_to_js]
+  | [%type: float] -> Some [%expr Ppx_expjs_runtime.float_to_js]
   | [%type: unit] -> Some [%expr fun () -> Js_of_ocaml.Js.undefined]
   | { ptyp_desc = Ptyp_constr ({ txt = [%lid option]; _ }, [ t ]); _ } -> (
       match to_js t with
@@ -107,11 +122,11 @@ let get_arg = function
   | [%pat? ()] -> ("()", None)
   | p -> raise (Unsupported_pattern p)
 
-let rec get_args_and_return_type expr curr =
+let rec get_args_and_type expr curr =
   match expr with
   | { pexp_desc = Pexp_fun (l, _, p, expr); _ } ->
       let name, conv = get_arg p in
-      get_args_and_return_type expr ((l, name, conv) :: curr)
+      get_args_and_type expr ((l, name, conv) :: curr)
   | { pexp_desc = Pexp_constraint (_, t); _ } -> (List.rev curr, Some t)
   | _ -> (List.rev curr, None)
 
@@ -210,10 +225,10 @@ class attribute_mapper =
                   List.fold_left
                     (fun acc vb ->
                       if contains_attr vb.pvb_attributes "expjs" then
-                        let fname = get_fun_name vb in
+                        let fname = get_var_name vb in
                         let ename = get_exp_name vb in
                         let args, ret_typ =
-                          get_args_and_return_type vb.pvb_expr []
+                          get_args_and_type vb.pvb_expr []
                         in
                         let fexpr = build_fun fname args ret_typ in
                         let export = build_export ename fexpr in

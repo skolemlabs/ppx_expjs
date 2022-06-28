@@ -9,3 +9,4 @@ let get_required obj key =
 external int_of_js : float Js.t -> int = "%identity"
 external float_of_js : float Js.t -> float = "%identity"
 external int_to_js : int -> float Js.t = "%identity"
+external float_to_js : float -> float Js.t = "%identity"
