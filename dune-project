@@ -14,4 +14,6 @@
   (depends
     (dune (>= 3.0.3))
     (tezt (and (>= 1.0.0) :with-test))
+    (metaquot (>= 0.5.1))
+    (js_of_ocaml (>= 4.0.0))
     (ppxlib (>= 0.25.0))))
