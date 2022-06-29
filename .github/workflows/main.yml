@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v2.4.2
 
       - name: Use OCaml ${{ matrix.ocaml-version }}
-        uses: ocaml/setup-ocaml@v1.1.11
+        uses: ocaml/setup-ocaml@v2.0.5
         with:
           ocaml-compiler: ${{ matrix.ocaml-version }}
 
