@@ -30,10 +30,3 @@ jobs:
 
         - name: Test
           run: opam exec -- dune exec -- test/ppx_expjs_test.exe --junit junit.xml
-
-        - name: Publish tests
-          uses: mikepenz/action-junit-report@v3
-          if: always()
-          with:
-            report_paths: ./junit.xml
-
