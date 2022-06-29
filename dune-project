@@ -5,6 +5,9 @@
 
 (generate_opam_files true)
 
+(authors "Zach Baylin <zach@skolem.tech>")
+(maintainers "Zach Baylin <zach@skolem.tech>")
+
 (package
   (name ppx_expjs)
   (synopsis "ppx for exporting OCaml functions to be called from Javascript")
