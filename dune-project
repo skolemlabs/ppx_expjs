@@ -10,5 +10,6 @@
   (synopsis "ppx for exporting OCaml functions to be called from Javascript")
   (depends
     (dune (>= 3.0.0))
+    (tezt (>= 1.0.0))
     (ppxlib (>= 0.26.0))
     (metaquot (>= 0.5.1))))
