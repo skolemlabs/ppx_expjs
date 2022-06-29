@@ -6,13 +6,13 @@ on:
 jobs:
   build:
     name: Build and test
-      strategy:
-        fail-fast: false
-        matrix:
-          os:
-            - ubuntu-latest
-          ocaml-version:
-            - 4.13.1
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-version:
+          - 4.13.1
 
       runs-on: ${{ matrix.os }}
 
