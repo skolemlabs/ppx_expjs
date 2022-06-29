@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  - push
+
+jobs:
+  build:
+    name: Build and test
+      strategy:
+        fail-fast: false
+        matrix:
+          os:
+            - ubuntu-latest
+          ocaml-version:
+            - 4.13.1
+
+      runs-on: ${{ matrix.os }}
+
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v2.4.2
+
+        - name: Use OCaml ${{ matrix.ocaml-version }}
+          uses: ocaml/setup-ocaml@v1.1.11
+          with:
+            ocaml-compiler: ${{ matrix.ocaml-version }}
+
+        - name: Build
+          run: opam exec -- dune build
+
+        - name: Test
+          run: opam exec -- dune exec -- test/ppx_expjs_test.exe --junit junit.xml
+
+        - name: Publish tests
+          uses: mikepenz/action-junit-report@v3
+          if: always()
+          with:
+            report_paths: ./junit.xml
+
