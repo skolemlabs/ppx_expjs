@@ -24,6 +24,7 @@ jobs:
         uses: ocaml/setup-ocaml@v2.0.5
         with:
           ocaml-compiler: ${{ matrix.ocaml-version }}
+          opam-depext: false
 
       - name: Build
         run: opam exec -- dune build
