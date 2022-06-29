@@ -10,9 +10,8 @@
 
 (package
   (name ppx_expjs)
-  (synopsis "ppx for exporting OCaml functions to be called from Javascript")
+  (synopsis "Ppx for exporting OCaml functions to be called from Javascript")
   (depends
-    (dune (>= 3.0.0))
+    (dune (>= 3.0.3))
     (tezt (and (>= 1.0.0) :with-test))
-    (ppxlib (>= 0.26.0))
-    (metaquot (>= 0.5.1))))
+    (ppxlib (>= 0.25.0))))
