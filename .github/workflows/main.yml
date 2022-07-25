@@ -36,6 +36,10 @@ jobs:
       - name: Install OPAM dependencies
         run: opam install . --deps-only --with-test
 
+      - name: Install NPM dependencies
+        run: npm ci 
+        working-directory: js_test
+
       - name: Build
         run: opam exec -- dune build
 
