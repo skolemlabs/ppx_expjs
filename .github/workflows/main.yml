@@ -43,7 +43,8 @@ jobs:
         run: opam exec -- dune exec -- test/ppx_expjs_test.exe --junit junit.xml
 
       - name: Test (JS)
-        run: cd js_test && npm run test
+        run: npm run test
+        working-directory: js_test
 
       - name: Publish tests
         uses: mikepenz/action-junit-report@v3
