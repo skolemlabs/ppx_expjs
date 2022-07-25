@@ -1,0 +1,9 @@
+{
+  "name": "ppx_expjs:js_test",
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "jest": "^28.1.3"
+  }
+}
