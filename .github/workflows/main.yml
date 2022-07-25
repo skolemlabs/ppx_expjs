@@ -54,5 +54,5 @@ jobs:
         uses: mikepenz/action-junit-report@v3
         if: always()
         with:
-          report_paths: ./junit.xml
+          report_paths: "**/junit.xml"
 
