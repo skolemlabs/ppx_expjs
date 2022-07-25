@@ -26,14 +26,23 @@ jobs:
           ocaml-compiler: ${{ matrix.ocaml-version }}
           opam-depext: false
 
+      - name: Use NodeJS 16
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'npm'
+
       - name: Install OPAM dependencies
         run: opam install . --deps-only --with-test
 
       - name: Build
         run: opam exec -- dune build
 
-      - name: Test
+      - name: Test (OCaml)
         run: opam exec -- dune exec -- test/ppx_expjs_test.exe --junit junit.xml
+
+      - name: Test (JS)
+        run: cd js_test && npm run test
 
       - name: Publish tests
         uses: mikepenz/action-junit-report@v3
