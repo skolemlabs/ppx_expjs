@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  - push
+
+jobs:
+  build:
+    name: Build and test
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-version:
+          - 4.13.1
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.4.2
+
+      - name: Use OCaml ${{ matrix.ocaml-version }}
+        uses: ocaml/setup-ocaml@v2.0.5
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-version }}
+          opam-depext: false
+
+      - name: Use NodeJS 16
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'npm'
+          cache-dependency-path: js_test/package-lock.json
+
+      - name: Install OPAM dependencies
+        run: opam install . --deps-only --with-test
+
+      - name: Install NPM dependencies
+        run: npm ci 
+        working-directory: js_test
+
+      - name: Build
+        run: opam exec -- dune build
+
+      - name: Test (OCaml)
+        run: opam exec -- dune exec -- test/ppx_expjs_test.exe --junit junit.xml
+
+      - name: Test (JS)
+        run: npm run test
+        working-directory: js_test
+
+      - name: Publish tests
+        uses: mikepenz/action-junit-report@v3
+        if: always()
+        with:
+          report_paths: "**/junit.xml"
+

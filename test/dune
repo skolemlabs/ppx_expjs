@@ -1,0 +1,5 @@
+(test
+ (name ppx_expjs_test)
+ (libraries tezt ppx_expjs)
+ (preprocess
+  (pps metaquot.ppx)))

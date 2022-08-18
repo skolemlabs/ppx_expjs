@@ -1,0 +1,4 @@
+(library
+ (name ppx_expjs_runtime)
+ (public_name ppx_expjs.runtime)
+ (libraries js_of_ocaml))
