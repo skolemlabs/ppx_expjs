@@ -1,9 +1,12 @@
 open Ppxlib
 open Ast_builder.Default
 
+type config = { exp_name : string; strict : bool }
+
 exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
 exception Invalid_payload of payload
+exception No_conversion_specified of string
 
 let () =
   Printexc.record_backtrace true;
@@ -66,6 +69,22 @@ let get_exp_name = function
       | e -> raise (Unsupported_expression e))
   | vb -> get_var_name vb
 
+(** Determine if we should be using strict mode. In strict mode, all types must explicitly have convertors specified. *)
+let get_strict = function
+  | {
+      pvb_attributes =
+        [ { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } ];
+      _;
+    }
+    when contains_field e "strict" -> (
+      match get_field e "strict" with
+      | [%expr true] -> true
+      | [%expr false] -> false
+      | e -> raise (Unsupported_expression e))
+  | _ -> false
+
+let get_config vb = { exp_name = get_exp_name vb; strict = get_strict vb }
+
 (** Extracts the custom convertor from the attribute, and fails if the payload is malformed. *)
 let get_custom_conv = function
   | { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } -> e
@@ -123,7 +142,7 @@ let rec to_js = function
       | None -> Some [%expr Js_of_ocaml.Js.Optdef.array])
   | _ -> None
 
-let get_arg = function
+let get_arg ~strict = function
   | {
       ppat_desc =
         Ppat_constraint ({ ppat_desc = Ppat_var { txt = name; _ }; _ }, typ);
@@ -131,15 +150,16 @@ let get_arg = function
     } ->
       let conv = of_js typ in
       (name, conv)
-  | { ppat_desc = Ppat_var { txt = name; _ }; _ } -> (name, None)
+  | { ppat_desc = Ppat_var { txt = name; _ }; _ } ->
+      (name, if strict then raise (No_conversion_specified name) else None)
   | [%pat? ()] -> ("()", None)
   | p -> raise (Unsupported_pattern p)
 
-let rec get_args_and_type expr curr =
+let rec get_args_and_type ~strict expr curr =
   match expr with
   | { pexp_desc = Pexp_fun (l, _, p, expr); _ } ->
-      let name, conv = get_arg p in
-      get_args_and_type expr ((l, name, conv) :: curr)
+      let name, conv = get_arg ~strict p in
+      get_args_and_type expr ~strict ((l, name, conv) :: curr)
   | { pexp_desc = Pexp_constraint (_, t); _ } -> (List.rev curr, Some t)
   | _ -> (List.rev curr, None)
 
@@ -239,10 +259,12 @@ class attribute_mapper =
                     (fun acc vb ->
                       if contains_attr vb.pvb_attributes "expjs" then
                         let fname = get_var_name vb in
-                        let ename = get_exp_name vb in
-                        let args, ret_typ = get_args_and_type vb.pvb_expr [] in
+                        let { strict; exp_name } = get_config vb in
+                        let args, ret_typ =
+                          get_args_and_type ~strict vb.pvb_expr []
+                        in
                         let fexpr = build_fun fname args ret_typ in
-                        let export = build_export ename fexpr in
+                        let export = build_export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
                           value_binding ~loc ~pat:[%pat? ()] ~expr:export
