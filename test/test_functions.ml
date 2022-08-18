@@ -1,4 +1,5 @@
 open Tezt
+open Tezt.Base
 open Helpers
 
 let () =
@@ -57,3 +58,18 @@ let () =
                    (Ppx_expjs_runtime.get_required labelled "x")))]
   in
   test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__
+    ~title:"Export function in strict mode without conversion"
+    ~tags:[ "function"; "of_js"; "strict" ]
+  @@ fun () ->
+  let run () =
+    let to_transform =
+      [%str let f x = print_int x [@@expjs { strict = true }]]
+    in
+    ignore @@ Ppx_expjs.expand_expjs to_transform
+  in
+  Check.raises (Ppx_expjs.No_conversion_specified "x") run
+    ~error_msg:"Expected PPX to raise %L, got %R";
+  unit
