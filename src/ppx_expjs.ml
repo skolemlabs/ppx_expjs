@@ -15,7 +15,11 @@ let () =
         Some (Format.asprintf "Unsupported_pattern: %a" Pprintast.pattern p)
     | Unsupported_expression e ->
         Some
-          (Format.asprintf "Unsupported_expression @ %a" Pprintast.expression e)
+          (Format.asprintf "Unsupported_expression: %a" Pprintast.expression e)
+    | No_conversion_specified { txt; loc } ->
+        Some
+          (Format.asprintf "No_conversion_specified: %s @ %a" txt Location.print
+             loc)
     | _ -> None)
 
 let get_loc () = !Ast_helper.default_loc
