@@ -6,7 +6,7 @@ type config = { exp_name : string; strict : bool }
 exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
 exception Invalid_payload of payload
-exception No_conversion_specified of string
+exception No_conversion_specified of string loc
 
 let () =
   Printexc.record_backtrace true;
@@ -150,8 +150,8 @@ let get_arg ~strict = function
     } ->
       let conv = of_js typ in
       (name, conv)
-  | { ppat_desc = Ppat_var { txt = name; _ }; _ } ->
-      (name, if strict then raise (No_conversion_specified name) else None)
+  | { ppat_desc = Ppat_var ({ txt = name; _ } as loc); _ } ->
+      (name, if strict then raise (No_conversion_specified loc) else None)
   | [%pat? ()] -> ("()", None)
   | p -> raise (Unsupported_pattern p)
 

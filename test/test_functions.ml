@@ -70,6 +70,9 @@ let () =
     in
     ignore @@ Ppx_expjs.expand_expjs to_transform
   in
-  Check.raises (Ppx_expjs.No_conversion_specified "x") run
-    ~error_msg:"Expected PPX to raise %L, got %R";
+  let should_raise =
+    Ppx_expjs.No_conversion_specified
+      { txt = "x"; loc = !Ast_helper.default_loc }
+  in
+  Check.raises should_raise run ~error_msg:"Expected PPX to raise %L, got %R";
   unit
