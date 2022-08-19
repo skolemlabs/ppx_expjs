@@ -61,7 +61,8 @@ let () =
 
 let () =
   Test.register ~__FILE__
-    ~title:"Export function in strict mode without conversion"
+    ~title:
+      "Export function in strict mode without type or conversion for argument"
     ~tags:[ "function"; "of_js"; "strict" ]
   @@ fun () ->
   let run () =
@@ -71,8 +72,30 @@ let () =
     ignore @@ Ppx_expjs.expand_expjs to_transform
   in
   let should_raise =
-    Ppx_expjs.No_conversion_specified
-      { txt = "x"; loc = !Ast_helper.default_loc }
+    Ppx_expjs.No_conversion_specified (!Ast_helper.default_loc, Some "x")
   in
   Check.raises should_raise run ~error_msg:"Expected PPX to raise %L, got %R";
   unit
+
+let () =
+  Test.register ~__FILE__
+    ~title:
+      "Export function in strict mode without type but with conversion for \
+       argument"
+    ~tags:[ "function"; "of_js"; "strict" ]
+  @@ fun () ->
+  let to_transform =
+    [%str
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) = print_int x
+        [@@expjs { strict = true }]]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) = print_int x
+        [@@expjs { strict = true }]
+
+      let () =
+        Js_of_ocaml.Js.export "f" (fun x -> f (Ppx_expjs_runtime.int_of_js x))]
+  in
+  test_structures ~expected ~received:transformed
