@@ -86,16 +86,17 @@ let () =
   @@ fun () ->
   let to_transform =
     [%str
-      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) = print_int x
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) : int = print_int x
         [@@expjs { strict = true }]]
   in
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
-      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) = print_int x
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) : int = print_int x
         [@@expjs { strict = true }]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun x -> f (Ppx_expjs_runtime.int_of_js x))]
+        Js_of_ocaml.Js.export "f" (fun x ->
+            Ppx_expjs_runtime.int_to_js (f (Ppx_expjs_runtime.int_of_js x)))]
   in
   test_structures ~expected ~received:transformed

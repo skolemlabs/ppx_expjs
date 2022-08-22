@@ -7,6 +7,7 @@ exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
 exception Invalid_payload of payload
 exception Unknown_of_js of string loc
+exception Unknown_to_js of string loc
 
 let () =
   Printexc.record_backtrace true;
@@ -18,6 +19,8 @@ let () =
           (Format.asprintf "Unsupported_expression: %a" Pprintast.expression e)
     | Unknown_of_js { txt; loc } ->
         Some (Format.asprintf "Unknown_of_js: %s @ %a" txt Location.print loc)
+    | Unknown_to_js { txt; loc } ->
+        Some (Format.asprintf "Unknown_to_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
 let get_loc () = !Ast_helper.default_loc
@@ -204,7 +207,7 @@ let build_prototype args =
   else prototype
 
 (** Constructs the body of the function, which converts all the arguments and calls the OCaml function *)
-let build_body fname args ret_typ =
+let build_body ~vb_loc ~strict fname args ret_typ =
   let eargs =
     List.fold_left
       (fun acc (l, name, conv) ->
@@ -242,11 +245,13 @@ let build_body fname args ret_typ =
   let f = pexp_apply ~loc (evar ~loc fname) eargs in
   match Option.bind ret_typ to_js with
   | Some to_js -> pexp_apply ~loc to_js [ (Nolabel, f) ]
-  | None -> f
+  | None ->
+      (* If we weren't able to find a to_js conversion in strict mode, we must raise. *)
+      if strict then raise (Unknown_to_js { txt = fname; loc = vb_loc }) else f
 
-let build_fun fname args ret_typ =
+let build_fun ~vb_loc ~strict fname args ret_typ =
   let prototype = build_prototype args in
-  let body = build_body fname args ret_typ in
+  let body = build_body ~vb_loc ~strict fname args ret_typ in
   prototype body
 
 let build_export fname fexpr =
@@ -275,7 +280,10 @@ class attribute_mapper =
                         let args, ret_typ =
                           get_args_and_type ~strict vb.pvb_expr []
                         in
-                        let fexpr = build_fun fname args ret_typ in
+                        let fexpr =
+                          build_fun ~vb_loc:vb.pvb_loc ~strict fname args
+                            ret_typ
+                        in
                         let export = build_export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
