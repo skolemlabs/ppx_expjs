@@ -1,4 +1,5 @@
 open Tezt
+open Tezt.Base
 open Helpers
 
 let () =
@@ -71,5 +72,37 @@ let () =
     [%str
       let x = "string" [@@expjs]
       let () = Js_of_ocaml.Js.export "x" x]
+  in
+  test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__
+    ~title:"Export constant in strict mode without type or conversion"
+    ~tags:[ "constant"; "to_js"; "strict" ]
+  @@ fun () ->
+  let run () =
+    let to_transform = [%str let x = 10 [@@expjs { strict = true }]] in
+    ignore @@ Ppx_expjs.expand_expjs to_transform
+  in
+  let should_raise =
+    Ppx_expjs.Unknown_to_js { txt = "x"; loc = !Ast_helper.default_loc }
+  in
+  Check.raises should_raise run ~error_msg:"Expected PPX to raise %L, got %R";
+  unit
+
+let () =
+  Test.register ~__FILE__
+    ~title:"Export constant in strict mode without type but with conversion"
+    ~tags:[ "constant"; "to_js"; "strict" ]
+  @@ fun () ->
+  let to_transform =
+    [%str
+      let (x [@expjs.conv string_conv]) = "string" [@@expjs { strict = true }]]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let (x [@expjs.conv string_conv]) = "string" [@@expjs { strict = true }]
+      let () = Js_of_ocaml.Js.export "x" (string_conv x)]
   in
   test_structures ~expected ~received:transformed

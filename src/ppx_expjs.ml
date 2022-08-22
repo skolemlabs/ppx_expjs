@@ -142,7 +142,7 @@ let rec to_js = function
       match to_js t with
       | Some c ->
           Some
-            (* Map the value inside the option, then unbox it to make it a JS value *)
+            (* Map the value inside the array, then unbox it to make it a JS value *)
             [%expr fun v -> Js_of_ocaml.Js.array (Array.map [%e c] v)]
       | None -> Some [%expr Js_of_ocaml.Js.Optdef.array])
   | _ -> None
@@ -169,14 +169,26 @@ let get_arg ~strict = function
   | [%pat? ()] -> ("()", None)
   | p -> raise (Unsupported_pattern p)
 
-let rec get_args_and_type ~strict expr curr =
-  match expr with
+let rec get_args_and_conv ~strict ~fname expr pat curr =
+  match (expr, strict) with
   (* If we get a function, recurse through all the arguments. *)
-  | { pexp_desc = Pexp_fun (l, _, p, expr); _ } ->
+  | { pexp_desc = Pexp_fun (l, _, p, expr); _ }, _ ->
       let name, conv = get_arg ~strict p in
-      get_args_and_type expr ~strict ((l, name, conv) :: curr)
-  | { pexp_desc = Pexp_constraint (_, t); _ } -> (List.rev curr, Some t)
-  | _ -> (List.rev curr, None)
+      get_args_and_conv ~strict ~fname expr pat ((l, name, conv) :: curr)
+  | { pexp_desc = Pexp_constraint (_, t); pexp_loc; _ }, _ ->
+      let conv = to_js t in
+      (* If we're in strict mode and got no conversion, we raise *)
+      if strict && Option.is_none conv then
+        raise (Unknown_to_js { loc = pexp_loc; txt = fname });
+      (List.rev curr, to_js t)
+  (* If the user has specified a custom convertor, use it *)
+  | _, _ when contains_attr pat.ppat_attributes "expjs.conv" ->
+      let attr = get_attr pat.ppat_attributes "expjs.conv" in
+      (List.rev curr, Some (get_custom_conv attr))
+  (* If we're in strict mode and no type is specified, we raise *)
+  | { pexp_loc; _ }, true ->
+      raise (Unknown_to_js { loc = pexp_loc; txt = fname })
+  | _, false -> (List.rev curr, None)
 
 (** Constructs the prototype of the lambda to be exported. *)
 let build_prototype args =
@@ -207,7 +219,7 @@ let build_prototype args =
   else prototype
 
 (** Constructs the body of the function, which converts all the arguments and calls the OCaml function *)
-let build_body ~vb_loc ~strict fname args ret_typ =
+let build_body fname args conv =
   let eargs =
     List.fold_left
       (fun acc (l, name, conv) ->
@@ -243,15 +255,13 @@ let build_body ~vb_loc ~strict fname args ret_typ =
   in
   let loc = get_loc () in
   let f = pexp_apply ~loc (evar ~loc fname) eargs in
-  match Option.bind ret_typ to_js with
+  match conv with
   | Some to_js -> pexp_apply ~loc to_js [ (Nolabel, f) ]
-  | None ->
-      (* If we weren't able to find a to_js conversion in strict mode, we must raise. *)
-      if strict then raise (Unknown_to_js { txt = fname; loc = vb_loc }) else f
+  | None -> f
 
-let build_fun ~vb_loc ~strict fname args ret_typ =
+let build_fun fname args conv =
   let prototype = build_prototype args in
-  let body = build_body ~vb_loc ~strict fname args ret_typ in
+  let body = build_body fname args conv in
   prototype body
 
 let build_export fname fexpr =
@@ -277,13 +287,11 @@ class attribute_mapper =
                       if contains_attr vb.pvb_attributes "expjs" then
                         let fname = get_var_name vb in
                         let { strict; exp_name } = get_config vb in
-                        let args, ret_typ =
-                          get_args_and_type ~strict vb.pvb_expr []
+                        let args, conv =
+                          get_args_and_conv ~strict ~fname vb.pvb_expr
+                            vb.pvb_pat []
                         in
-                        let fexpr =
-                          build_fun ~vb_loc:vb.pvb_loc ~strict fname args
-                            ret_typ
-                        in
+                        let fexpr = build_fun fname args conv in
                         let export = build_export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
