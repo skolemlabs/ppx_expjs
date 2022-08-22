@@ -6,7 +6,7 @@ type config = { exp_name : string; strict : bool }
 exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
 exception Invalid_payload of payload
-exception No_conversion_specified of (location * string option)
+exception Unknown_of_js of string loc
 
 let () =
   Printexc.record_backtrace true;
@@ -16,11 +16,8 @@ let () =
     | Unsupported_expression e ->
         Some
           (Format.asprintf "Unsupported_expression: %a" Pprintast.expression e)
-    | No_conversion_specified (loc, name) ->
-        Some
-          (Format.asprintf "No_conversion_specified: %s @ %a"
-             (Option.value ~default:"(unknown)" name)
-             Location.print loc)
+    | Unknown_of_js { txt; loc } ->
+        Some (Format.asprintf "Unknown_of_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
 let get_loc () = !Ast_helper.default_loc
@@ -151,13 +148,13 @@ let get_arg ~strict = function
   (* Optimal case: we get type info and a possible JS -> OCaml convertor. *)
   | {
       ppat_desc =
-        Ppat_constraint ({ ppat_desc = Ppat_var { txt = name; loc }; _ }, typ);
+        Ppat_constraint
+          ({ ppat_desc = Ppat_var ({ txt = name; _ } as loc); _ }, typ);
       _;
     } ->
       let conv = of_js typ in
       (* If we're in strict mode and we weren't able to generate a convertor, we raise. *)
-      if strict && Option.is_none conv then
-        raise (No_conversion_specified (loc, Some name));
+      if strict && Option.is_none conv then raise (Unknown_of_js loc);
       (name, conv)
   (* When we don't have any type info, the user still may have specified a conversion. We should use that. *)
   | { ppat_desc = Ppat_var { txt = name; _ }; ppat_attributes; _ }
@@ -165,8 +162,7 @@ let get_arg ~strict = function
       let attr = get_attr ppat_attributes "expjs.conv" in
       (name, Some (get_custom_conv attr))
   (* If we're in strict mode and we have no type/conversion info, we raise. *)
-  | { ppat_desc = Ppat_var { txt; loc }; _ } when strict ->
-      raise (No_conversion_specified (loc, Some txt))
+  | { ppat_desc = Ppat_var loc; _ } when strict -> raise (Unknown_of_js loc)
   | [%pat? ()] -> ("()", None)
   | p -> raise (Unsupported_pattern p)
 
