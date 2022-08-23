@@ -106,3 +106,17 @@ let () =
       let () = Js_of_ocaml.Js.export "x" (string_conv x)]
   in
   test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__ ~title:"Export constant with structure extension"
+    ~tags:[ "constant"; "to_js"; "extension" ]
+  @@ fun () ->
+  let to_transform = [%str let%test_ext x : string = "string" [@@expjs]] in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let%test_ext x : string = "string" [@@expjs]
+
+      let () = Js_of_ocaml.Js.export "x" (Js_of_ocaml.Js.string x)]
+  in
+  test_structures ~expected ~received:transformed
