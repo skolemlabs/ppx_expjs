@@ -1,4 +1,5 @@
 open Tezt
+open Tezt.Base
 open Helpers
 
 let () =
@@ -55,5 +56,47 @@ let () =
               ~x:
                 (Js_of_ocaml.Js.to_string
                    (Ppx_expjs_runtime.get_required labelled "x")))]
+  in
+  test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__
+    ~title:
+      "Export function in strict mode without type or conversion for argument"
+    ~tags:[ "function"; "of_js"; "strict" ]
+  @@ fun () ->
+  let run () =
+    let to_transform =
+      [%str let f x = print_int x [@@expjs { strict = true }]]
+    in
+    ignore @@ Ppx_expjs.expand_expjs to_transform
+  in
+  let should_raise =
+    Ppx_expjs.Unknown_of_js { txt = "x"; loc = !Ast_helper.default_loc }
+  in
+  Check.raises should_raise run ~error_msg:"Expected PPX to raise %L, got %R";
+  unit
+
+let () =
+  Test.register ~__FILE__
+    ~title:
+      "Export function in strict mode without type but with conversion for \
+       argument"
+    ~tags:[ "function"; "of_js"; "strict" ]
+  @@ fun () ->
+  let to_transform =
+    [%str
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) : int = print_int x
+        [@@expjs { strict = true }]]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) : int = print_int x
+        [@@expjs { strict = true }]
+
+      let () =
+        Js_of_ocaml.Js.export "f" (fun x ->
+            Ppx_expjs_runtime.int_to_js (f (Ppx_expjs_runtime.int_of_js x)))]
   in
   test_structures ~expected ~received:transformed
