@@ -172,9 +172,10 @@ let get_arg ~strict = function
 let rec get_args_and_conv ~strict ~fname expr pat curr =
   match (expr, strict) with
   (* If we get a function, recurse through all the arguments. *)
-  | { pexp_desc = Pexp_fun (l, e, p, rest); _ }, _ ->
+  | { pexp_desc = Pexp_fun (lbl, def_expr, p, rest); _ }, _ ->
       let name, conv = get_arg ~strict p in
-      get_args_and_conv ~strict ~fname rest pat ((l, e, name, conv) :: curr)
+      get_args_and_conv ~strict ~fname rest pat
+        ((lbl, def_expr, name, conv) :: curr)
   | { pexp_desc = Pexp_constraint (_, t); pexp_loc; _ }, _ ->
       let conv = to_js t in
       (* If we're in strict mode and got no conversion, we raise *)
@@ -222,14 +223,14 @@ let build_prototype args =
 let build_body fname args conv =
   let eargs =
     List.fold_left
-      (fun acc (l, e, name, conv) ->
+      (fun acc (lbl, def_expr, name, conv) ->
         let loc = get_loc () in
         let apply_opt_conv exp =
           match conv with
           | Some c -> pexp_apply ~loc c [ (Nolabel, exp) ]
           | None -> exp
         in
-        match (name, l, e) with
+        match (name, lbl, def_expr) with
         | "()", _, _ -> (Nolabel, [%expr ()]) :: acc
         | _, Nolabel, _ -> (Nolabel, apply_opt_conv @@ evar ~loc name) :: acc
         | _, Labelled l, _ ->
@@ -241,7 +242,9 @@ let build_body fname args conv =
               @@ pexp_apply ~loc [%expr Ppx_expjs_runtime.get_required]
                    [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
             :: acc
-        | _, Optional o, None ->
+        | ( _,
+            Optional o,
+            None (* If it's optional and has no body, there's no default *) ) ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
@@ -250,11 +253,12 @@ let build_body fname args conv =
               @@ pexp_apply ~loc [%expr Js_of_ocaml.Js.Unsafe.get]
                    [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
             :: acc
-        | _, Optional o, Some _ ->
+        | ( _,
+            Optional o,
+            Some _ (* If it's optional and has a body, there's a default *) ) ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
-
             let from_js =
               pexp_apply ~loc [%expr Ppx_expjs_runtime.get_opt]
                 [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ]
