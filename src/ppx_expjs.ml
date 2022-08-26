@@ -172,9 +172,9 @@ let get_arg ~strict = function
 let rec get_args_and_conv ~strict ~fname expr pat curr =
   match (expr, strict) with
   (* If we get a function, recurse through all the arguments. *)
-  | { pexp_desc = Pexp_fun (l, _, p, expr); _ }, _ ->
+  | { pexp_desc = Pexp_fun (l, e, p, rest); _ }, _ ->
       let name, conv = get_arg ~strict p in
-      get_args_and_conv ~strict ~fname expr pat ((l, name, conv) :: curr)
+      get_args_and_conv ~strict ~fname rest pat ((l, e, name, conv) :: curr)
   | { pexp_desc = Pexp_constraint (_, t); pexp_loc; _ }, _ ->
       let conv = to_js t in
       (* If we're in strict mode and got no conversion, we raise *)
@@ -194,7 +194,7 @@ let rec get_args_and_conv ~strict ~fname expr pat curr =
 let build_prototype args =
   let prototype, named =
     List.fold_left
-      (fun (f, named) (label, name, _) ->
+      (fun (f, named) (label, _, name, _) ->
         let loc = get_loc () in
         let labelled = label <> Nolabel in
         let named' = named || labelled in
@@ -222,17 +222,17 @@ let build_prototype args =
 let build_body fname args conv =
   let eargs =
     List.fold_left
-      (fun acc (l, name, conv) ->
+      (fun acc (l, e, name, conv) ->
         let loc = get_loc () in
         let apply_opt_conv exp =
           match conv with
           | Some c -> pexp_apply ~loc c [ (Nolabel, exp) ]
           | None -> exp
         in
-        match (name, l) with
-        | "()", _ -> (Nolabel, [%expr ()]) :: acc
-        | _, Nolabel -> (Nolabel, apply_opt_conv @@ evar ~loc name) :: acc
-        | _, Labelled l ->
+        match (name, l, e) with
+        | "()", _, _ -> (Nolabel, [%expr ()]) :: acc
+        | _, Nolabel, _ -> (Nolabel, apply_opt_conv @@ evar ~loc name) :: acc
+        | _, Labelled l, _ ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
@@ -241,7 +241,7 @@ let build_body fname args conv =
               @@ pexp_apply ~loc [%expr Ppx_expjs_runtime.get_required]
                    [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
             :: acc
-        | _, Optional o ->
+        | _, Optional o, None ->
             let name_str =
               pexp_constant ~loc (Pconst_string (name, loc, None))
             in
@@ -249,6 +249,22 @@ let build_body fname args conv =
               apply_opt_conv
               @@ pexp_apply ~loc [%expr Js_of_ocaml.Js.Unsafe.get]
                    [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ] )
+            :: acc
+        | _, Optional o, Some _ ->
+            let name_str =
+              pexp_constant ~loc (Pconst_string (name, loc, None))
+            in
+
+            let from_js =
+              pexp_apply ~loc [%expr Ppx_expjs_runtime.get_opt]
+                [ (Nolabel, evar ~loc "labelled"); (Nolabel, name_str) ]
+            in
+            ( Optional o,
+              match conv with
+              | Some c ->
+                  pexp_apply ~loc [%expr Option.map]
+                    [ (Nolabel, c); (Nolabel, from_js) ]
+              | None -> from_js )
             :: acc)
       [] args
     |> List.rev
