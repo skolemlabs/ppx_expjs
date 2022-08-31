@@ -12,8 +12,11 @@ let g ~(x : int) ~(y : string) ?(z : int = 10) () =
 let return_unit (a : unit) : unit = ignore a [@@expjs]
 let some_string () : string option = Some "a" [@@expjs]
 let none_string () : string option = None [@@expjs]
-let my_str : string = "my_string" [@@expjs]
-let my_int : int = 4 [@@expjs]
+
+module Caml_const = struct
+  let my_str : string = "my_string" [@@expjs]
+  let my_int : int = 4 [@@expjs]
+end
 
 let sum_array (arr : int array) : int =
   Array.fold_left (fun acc elt -> acc + elt) 0 arr
