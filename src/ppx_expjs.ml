@@ -280,6 +280,36 @@ class attribute_mapper =
         List.fold_left
           (fun acc si ->
             match si.pstr_desc with
+            (* WARNING: this is very hacky but unfortunately necessary. Touch this code at your peril!
+                The Ast_traverse classes traverse the parsetree in a bottom-up manner. This means that if the value being exported
+                is attached to some structure extension (such as in jsoo-react), the export is as well. This doesn't play well with
+                other PPXs, some of which assume that there is only a single value_binding per structure. Ideally other PPXs shouldn't
+                mess with the exports anyway, so we just breakout the export from the extension if we see it. The bottom-up aspect enforces the
+                invariant that we created the export before we see it in an extension, which means this code should always work. *)
+            | Pstr_extension
+                ( ( ext_loc,
+                    PStr
+                      [
+                        ({
+                           pstr_desc =
+                             Pstr_value
+                               (_, [ { pvb_attributes = val_attrs; _ } ]);
+                           (* If we see a value structure with a single binding... *)
+                         _;
+                         } as val_str);
+                        exp_str;
+                      ] ),
+                  ext_attrs )
+              when contains_attr val_attrs "expjs"
+                   (* ...we test if it contains the magic attribute. *) ->
+                let ext_str' =
+                  {
+                    si with
+                    pstr_desc =
+                      Pstr_extension ((ext_loc, PStr [ val_str ]), ext_attrs);
+                  }
+                in
+                exp_str :: ext_str' :: acc
             | Pstr_value (r, vbs) ->
                 let vbs' =
                   List.fold_left
@@ -303,12 +333,13 @@ class attribute_mapper =
                 in
                 let loc = get_loc () in
                 (* This prevents a parsetree invariant where you have a let binding with no value *)
-                if vbs' <> [] then pstr_value ~loc r vbs' :: acc else acc
-            | _ -> acc)
+                if vbs' <> [] then pstr_value ~loc r vbs' :: si :: acc
+                else si :: acc
+            | _ -> si :: acc)
           [] s
       in
-      s @ List.rev l
+      List.rev l
   end
 
-let expand_expjs = (new attribute_mapper)#structure
+let expand_expjs s = (new attribute_mapper)#structure s
 let () = Driver.register_transformation "expjs" ~impl:expand_expjs
