@@ -61,6 +61,28 @@ let () =
 
 let () =
   Test.register ~__FILE__
+    ~title:"Export function with optional string arg (with default)"
+    ~tags:[ "function"; "of_js"; "string"; "optional"; "default" ]
+  @@ fun () ->
+  let to_transform =
+    [%str let f ?(x : string = "foobar") = print_endline x [@@expjs]]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let f ?(x : string = "foobar") = print_endline x [@@expjs]
+
+      let () =
+        Js_of_ocaml.Js.export "f" (fun labelled ->
+            f
+              ?x:
+                (Option.map Js_of_ocaml.Js.to_string
+                   (Ppx_expjs_runtime.get_opt labelled "x")))]
+  in
+  test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__
     ~title:
       "Export function in strict mode without type or conversion for argument"
     ~tags:[ "function"; "of_js"; "strict" ]

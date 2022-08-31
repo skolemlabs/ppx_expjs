@@ -3,8 +3,7 @@ let f (x : string) (y : int) : string =
   "return :)"
   [@@expjs]
 
-let g ~(x : int) ~(y : string) ?(z : (int[@expjs.conv Obj.magic]) option) () =
-  let z = Option.value z ~default:10 in
+let g ~(x : int) ~(y : string) ?(z : int = 10) () =
   print_endline
     (Printf.sprintf "ppx_expjs (g): x=%d y=%s z=%d" x (String.uppercase_ascii y)
        z)
