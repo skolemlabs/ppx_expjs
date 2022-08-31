@@ -165,3 +165,39 @@ let () =
       let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__ ~title:"Export constant inside module"
+    ~tags:[ "constant"; "to_js"; "module" ]
+  @@ fun () ->
+  let to_transform =
+    [%str
+      module M = struct
+        let x : string = "string" [@@expjs]
+      end]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
+
+      module M = struct
+        let __ppx_expjs_parent = __ppx_expjs_export
+        let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
+
+        let () =
+          Js_of_ocaml.Js.Unsafe.set __ppx_expjs_parent
+            (Js_of_ocaml.Js.string "M")
+            __ppx_expjs_export
+
+        let x : string = "string" [@@expjs]
+
+        let () =
+          Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export
+            (Js_of_ocaml.Js.string "x")
+            (Js_of_ocaml.Js.string x)
+      end
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
+  in
+  test_structures ~expected ~received:transformed
