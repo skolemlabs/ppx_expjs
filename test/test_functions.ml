@@ -10,10 +10,14 @@ let () =
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
       let f (x : int) = print_int x [@@expjs]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun x -> f (Ppx_expjs_runtime.int_of_js x))]
+        Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export (Js_of_ocaml.Js.string "f")
+          (fun x -> f (Ppx_expjs_runtime.int_of_js x))
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
 
@@ -28,15 +32,19 @@ let () =
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
       let f (x : string option) = Option.iter print_endline x [@@expjs]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun x ->
+        Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export (Js_of_ocaml.Js.string "f")
+          (fun x ->
             f
               ((fun v ->
                  Option.map Js_of_ocaml.Js.to_string
                    (Js_of_ocaml.Js.Optdef.to_option v))
-                 x))]
+                 x))
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
 
@@ -48,14 +56,18 @@ let () =
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
       let f ~(x : string) = print_endline x [@@expjs]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun labelled ->
+        Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export (Js_of_ocaml.Js.string "f")
+          (fun labelled ->
             f
               ~x:
                 (Js_of_ocaml.Js.to_string
-                   (Ppx_expjs_runtime.get_required labelled "x")))]
+                   (Ppx_expjs_runtime.get_required labelled "x")))
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
 
@@ -70,14 +82,18 @@ let () =
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
       let f ?(x : string = "foobar") = print_endline x [@@expjs]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun labelled ->
+        Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export (Js_of_ocaml.Js.string "f")
+          (fun labelled ->
             f
               ?x:
                 (Option.map Js_of_ocaml.Js.to_string
-                   (Ppx_expjs_runtime.get_opt labelled "x")))]
+                   (Ppx_expjs_runtime.get_opt labelled "x")))
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
 
@@ -114,11 +130,16 @@ let () =
   let transformed = Ppx_expjs.expand_expjs to_transform in
   let expected =
     [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
+
       let f (x [@expjs.conv Ppx_expjs_runtime.int_of_js]) : int = print_int x
         [@@expjs { strict = true }]
 
       let () =
-        Js_of_ocaml.Js.export "f" (fun x ->
-            Ppx_expjs_runtime.int_to_js (f (Ppx_expjs_runtime.int_of_js x)))]
+        Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export (Js_of_ocaml.Js.string "f")
+          (fun x ->
+            Ppx_expjs_runtime.int_to_js (f (Ppx_expjs_runtime.int_of_js x)))
+
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
