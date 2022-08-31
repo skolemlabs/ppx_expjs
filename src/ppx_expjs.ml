@@ -23,6 +23,33 @@ let () =
         Some (Format.asprintf "Unknown_to_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
+module Structures = struct
+  let rebind_parent_obj = [%str let __ppx_expjs_parent = __ppx_expjs_export]
+
+  let export_obj =
+    [%str let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]]
+
+  let export_module name =
+    ([%str
+       let () =
+         Js_of_ocaml.Js.Unsafe.set __ppx_expjs_parent
+           (Js_of_ocaml.Js.string "n")
+           __ppx_expjs_export]
+    [@subst let n : string = name])
+
+  let export_root_obj =
+    [%str let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
+end
+
+module Expressions = struct
+  let export fname fexpr =
+    ([%expr
+       Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export
+         (Js_of_ocaml.Js.string "fn")
+         [%e fexpr]]
+    [@subst let fn : string = fname])
+end
+
 let get_loc () = !Ast_helper.default_loc
 
 let contains_attr attrs str =
@@ -284,12 +311,6 @@ let build_fun fname args conv =
   let body = build_body fname args conv in
   prototype body
 
-let build_export fname fexpr =
-  let loc = get_loc () in
-  let export = [%expr Js_of_ocaml.Js.export] in
-  let fname_str = pexp_constant ~loc (Pconst_string (fname, loc, None)) in
-  pexp_apply ~loc export [ (Nolabel, fname_str); (Nolabel, fexpr) ]
-
 class attribute_mapper =
   object
     inherit Ast_traverse.map as super
@@ -300,6 +321,34 @@ class attribute_mapper =
         List.fold_left
           (fun acc si ->
             match si.pstr_desc with
+            | Pstr_module
+                ({
+                   pmb_name = { txt = Some mod_name; _ };
+                   pmb_expr =
+                     { pmod_desc = Pmod_structure mod_str; _ } as mod_expr;
+                   _;
+                 } as mod') ->
+                let mod_str' =
+                  Structures.(
+                    rebind_parent_obj @ export_obj @ export_module mod_name
+                    @ mod_str)
+                in
+                let si' =
+                  {
+                    si with
+                    pstr_desc =
+                      Pstr_module
+                        {
+                          mod' with
+                          pmb_expr =
+                            {
+                              mod_expr with
+                              pmod_desc = Pmod_structure mod_str';
+                            };
+                        };
+                  }
+                in
+                si' :: acc
             (* WARNING: this is very hacky but unfortunately necessary. Touch this code at your peril!
                 The Ast_traverse classes traverse the parsetree in a bottom-up manner. This means that if the value being exported
                 is attached to some structure extension (such as in jsoo-react), the export is as well. This doesn't play well with
@@ -342,7 +391,7 @@ class attribute_mapper =
                             vb.pvb_pat []
                         in
                         let fexpr = build_fun fname args conv in
-                        let export = build_export exp_name fexpr in
+                        let export = Expressions.export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
                           value_binding ~loc ~pat:[%pat? ()] ~expr:export
@@ -361,5 +410,7 @@ class attribute_mapper =
       List.rev l
   end
 
-let expand_expjs s = (new attribute_mapper)#structure s
+let expand_expjs s =
+  Structures.(export_obj @ (new attribute_mapper)#structure s @ export_root_obj)
+
 let () = Driver.register_transformation "expjs" ~impl:expand_expjs
