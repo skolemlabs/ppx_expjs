@@ -23,6 +23,11 @@ let () =
         Some (Format.asprintf "Unknown_to_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
+module Consts = struct
+  let ppx_name = "expjs"
+  let conv_attr_name = "expjs.conv"
+end
+
 module Structures = struct
   let rebind_parent_obj = [%str let __ppx_expjs_parent = __ppx_expjs_export]
 
@@ -125,8 +130,9 @@ let get_custom_conv = function
 (** Based on the type of the argument, generates/uses a known conversion from JS -> OCaml *)
 let rec of_js = function
   (* If the user has specified a custom conversion on this type, always use it *)
-  | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
-      let attr = get_attr ptyp_attributes "expjs.conv" in
+  | { ptyp_attributes; _ }
+    when contains_attr ptyp_attributes Consts.conv_attr_name ->
+      let attr = get_attr ptyp_attributes Consts.conv_attr_name in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.to_string]
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.to_bool]
@@ -150,8 +156,9 @@ let rec of_js = function
 
 let rec to_js = function
   (* If the user has specified a custom conversion on this type, always use it *)
-  | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
-      let attr = get_attr ptyp_attributes "expjs.conv" in
+  | { ptyp_attributes; _ }
+    when contains_attr ptyp_attributes Consts.conv_attr_name ->
+      let attr = get_attr ptyp_attributes Consts.conv_attr_name in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.string]
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.bool]
@@ -188,8 +195,8 @@ let get_arg ~strict = function
       (name, conv)
   (* When we don't have any type info, the user still may have specified a conversion. We should use that. *)
   | { ppat_desc = Ppat_var { txt = name; _ }; ppat_attributes; _ }
-    when contains_attr ppat_attributes "expjs.conv" ->
-      let attr = get_attr ppat_attributes "expjs.conv" in
+    when contains_attr ppat_attributes Consts.conv_attr_name ->
+      let attr = get_attr ppat_attributes Consts.conv_attr_name in
       (name, Some (get_custom_conv attr))
   (* If we're in strict mode and we have no type/conversion info, we raise. *)
   | { ppat_desc = Ppat_var loc; _ } when strict -> raise (Unknown_of_js loc)
@@ -210,8 +217,8 @@ let rec get_args_and_conv ~strict ~fname expr pat curr =
         raise (Unknown_to_js { loc = pexp_loc; txt = fname });
       (List.rev curr, to_js t)
   (* If the user has specified a custom convertor, use it *)
-  | _, _ when contains_attr pat.ppat_attributes "expjs.conv" ->
-      let attr = get_attr pat.ppat_attributes "expjs.conv" in
+  | _, _ when contains_attr pat.ppat_attributes Consts.conv_attr_name ->
+      let attr = get_attr pat.ppat_attributes Consts.conv_attr_name in
       (List.rev curr, Some (get_custom_conv attr))
   (* If we're in strict mode and no type is specified, we raise *)
   | { pexp_loc; _ }, true ->
@@ -369,7 +376,7 @@ class attribute_mapper =
                         exp_str;
                       ] ),
                   ext_attrs )
-              when contains_attr val_attrs "expjs"
+              when contains_attr val_attrs Consts.ppx_name
                    (* ...we test if it contains the magic attribute. *) ->
                 let ext_str' =
                   {
@@ -383,7 +390,7 @@ class attribute_mapper =
                 let vbs' =
                   List.fold_left
                     (fun acc vb ->
-                      if contains_attr vb.pvb_attributes "expjs" then
+                      if contains_attr vb.pvb_attributes Consts.ppx_name then
                         let fname = get_var_name vb in
                         let { strict; exp_name } = get_config vb in
                         let args, conv =
@@ -413,4 +420,4 @@ class attribute_mapper =
 let expand_expjs s =
   Structures.(export_obj @ (new attribute_mapper)#structure s @ export_root_obj)
 
-let () = Driver.register_transformation "expjs" ~impl:expand_expjs
+let () = Driver.register_transformation Consts.ppx_name ~impl:expand_expjs
