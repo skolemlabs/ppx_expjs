@@ -192,7 +192,7 @@ ReactDOM.render(elt, document.getElementById("react-root"))
 
 And after webpacking and some other magic, we get 🥁...
 
-*There should be a video here but pandoc doesn't like it :(*
+https://user-images.githubusercontent.com/4527949/188667724-4df3a8a6-7758-4757-81f8-655ea9ea3805.mov
 
 ...exactly the behavior we want!
 
@@ -200,24 +200,6 @@ You'll also notice that I was able to use JSX to call the component. This is pos
 
 If we compare the OCaml we wrote to what the ppx generated, the time and effort saved on the developer's behalf is stark.
 
-<table>
-<tr>
-<td>
-  **Before**
-</td>
-<td>
-  **After**
-</td>
-</tr>
-<tr>
-<td>
-  ```ocaml
-let%component button ~(text : string) ?(color : string = "red")
-    ?(hover_color : string = "orange") () = (* component implementation *)
-  [@@expjs]
-  ```
-</td>
-<td>
   ```ocaml
 let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
 
@@ -241,9 +223,7 @@ let () =
 
 let () = Js_of_ocaml.Js.export_all __ppx_expjs_export
   ```
-</td>
-</tr>
-</table>
+
 
 
 ## The wrapup
