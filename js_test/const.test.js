@@ -15,3 +15,7 @@ test('cnst.none_four is null', () => {
 test('cnst.some_four is 4', () => {
   expect(cnst.some_four).toBe(4);
 });
+
+test('cnst.Caml_module.my_str is "Caml_module.my_str"', () => {
+  expect(cnst.Caml_module.my_str).toBe("Caml_module.my_str");
+});

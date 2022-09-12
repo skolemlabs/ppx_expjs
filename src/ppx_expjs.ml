@@ -23,6 +23,38 @@ let () =
         Some (Format.asprintf "Unknown_to_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
+module Consts = struct
+  let ppx_name = "expjs"
+  let conv_attr_name = "expjs.conv"
+end
+
+module Structures = struct
+  let rebind_parent_obj = [%str let __ppx_expjs_parent = __ppx_expjs_export]
+
+  let export_obj =
+    [%str let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]]
+
+  let export_module name =
+    ([%str
+       let () =
+         Js_of_ocaml.Js.Unsafe.set __ppx_expjs_parent
+           (Js_of_ocaml.Js.string "n")
+           __ppx_expjs_export]
+    [@subst let n : string = name])
+
+  let export_root_obj =
+    [%str let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
+end
+
+module Expressions = struct
+  let export fname fexpr =
+    ([%expr
+       Js_of_ocaml.Js.Unsafe.set __ppx_expjs_export
+         (Js_of_ocaml.Js.string "fn")
+         [%e fexpr]]
+    [@subst let fn : string = fname])
+end
+
 let get_loc () = !Ast_helper.default_loc
 
 let contains_attr attrs str =
@@ -98,8 +130,9 @@ let get_custom_conv = function
 (** Based on the type of the argument, generates/uses a known conversion from JS -> OCaml *)
 let rec of_js = function
   (* If the user has specified a custom conversion on this type, always use it *)
-  | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
-      let attr = get_attr ptyp_attributes "expjs.conv" in
+  | { ptyp_attributes; _ }
+    when contains_attr ptyp_attributes Consts.conv_attr_name ->
+      let attr = get_attr ptyp_attributes Consts.conv_attr_name in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.to_string]
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.to_bool]
@@ -123,8 +156,9 @@ let rec of_js = function
 
 let rec to_js = function
   (* If the user has specified a custom conversion on this type, always use it *)
-  | { ptyp_attributes; _ } when contains_attr ptyp_attributes "expjs.conv" ->
-      let attr = get_attr ptyp_attributes "expjs.conv" in
+  | { ptyp_attributes; _ }
+    when contains_attr ptyp_attributes Consts.conv_attr_name ->
+      let attr = get_attr ptyp_attributes Consts.conv_attr_name in
       Some (get_custom_conv attr)
   | [%type: string] -> Some [%expr Js_of_ocaml.Js.string]
   | [%type: bool] -> Some [%expr Js_of_ocaml.Js.bool]
@@ -161,8 +195,8 @@ let get_arg ~strict = function
       (name, conv)
   (* When we don't have any type info, the user still may have specified a conversion. We should use that. *)
   | { ppat_desc = Ppat_var { txt = name; _ }; ppat_attributes; _ }
-    when contains_attr ppat_attributes "expjs.conv" ->
-      let attr = get_attr ppat_attributes "expjs.conv" in
+    when contains_attr ppat_attributes Consts.conv_attr_name ->
+      let attr = get_attr ppat_attributes Consts.conv_attr_name in
       (name, Some (get_custom_conv attr))
   (* If we're in strict mode and we have no type/conversion info, we raise. *)
   | { ppat_desc = Ppat_var loc; _ } when strict -> raise (Unknown_of_js loc)
@@ -183,8 +217,8 @@ let rec get_args_and_conv ~strict ~fname expr pat curr =
         raise (Unknown_to_js { loc = pexp_loc; txt = fname });
       (List.rev curr, to_js t)
   (* If the user has specified a custom convertor, use it *)
-  | _, _ when contains_attr pat.ppat_attributes "expjs.conv" ->
-      let attr = get_attr pat.ppat_attributes "expjs.conv" in
+  | _, _ when contains_attr pat.ppat_attributes Consts.conv_attr_name ->
+      let attr = get_attr pat.ppat_attributes Consts.conv_attr_name in
       (List.rev curr, Some (get_custom_conv attr))
   (* If we're in strict mode and no type is specified, we raise *)
   | { pexp_loc; _ }, true ->
@@ -284,12 +318,6 @@ let build_fun fname args conv =
   let body = build_body fname args conv in
   prototype body
 
-let build_export fname fexpr =
-  let loc = get_loc () in
-  let export = [%expr Js_of_ocaml.Js.export] in
-  let fname_str = pexp_constant ~loc (Pconst_string (fname, loc, None)) in
-  pexp_apply ~loc export [ (Nolabel, fname_str); (Nolabel, fexpr) ]
-
 class attribute_mapper =
   object
     inherit Ast_traverse.map as super
@@ -300,6 +328,34 @@ class attribute_mapper =
         List.fold_left
           (fun acc si ->
             match si.pstr_desc with
+            | Pstr_module
+                ({
+                   pmb_name = { txt = Some mod_name; _ };
+                   pmb_expr =
+                     { pmod_desc = Pmod_structure mod_str; _ } as mod_expr;
+                   _;
+                 } as mod') ->
+                let mod_str' =
+                  Structures.(
+                    rebind_parent_obj @ export_obj @ export_module mod_name
+                    @ mod_str)
+                in
+                let si' =
+                  {
+                    si with
+                    pstr_desc =
+                      Pstr_module
+                        {
+                          mod' with
+                          pmb_expr =
+                            {
+                              mod_expr with
+                              pmod_desc = Pmod_structure mod_str';
+                            };
+                        };
+                  }
+                in
+                si' :: acc
             (* WARNING: this is very hacky but unfortunately necessary. Touch this code at your peril!
                 The Ast_traverse classes traverse the parsetree in a bottom-up manner. This means that if the value being exported
                 is attached to some structure extension (such as in jsoo-react), the export is as well. This doesn't play well with
@@ -320,7 +376,7 @@ class attribute_mapper =
                         exp_str;
                       ] ),
                   ext_attrs )
-              when contains_attr val_attrs "expjs"
+              when contains_attr val_attrs Consts.ppx_name
                    (* ...we test if it contains the magic attribute. *) ->
                 let ext_str' =
                   {
@@ -334,7 +390,7 @@ class attribute_mapper =
                 let vbs' =
                   List.fold_left
                     (fun acc vb ->
-                      if contains_attr vb.pvb_attributes "expjs" then
+                      if contains_attr vb.pvb_attributes Consts.ppx_name then
                         let fname = get_var_name vb in
                         let { strict; exp_name } = get_config vb in
                         let args, conv =
@@ -342,7 +398,7 @@ class attribute_mapper =
                             vb.pvb_pat []
                         in
                         let fexpr = build_fun fname args conv in
-                        let export = build_export exp_name fexpr in
+                        let export = Expressions.export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
                           value_binding ~loc ~pat:[%pat? ()] ~expr:export
@@ -361,5 +417,7 @@ class attribute_mapper =
       List.rev l
   end
 
-let expand_expjs s = (new attribute_mapper)#structure s
-let () = Driver.register_transformation "expjs" ~impl:expand_expjs
+let expand_expjs s =
+  Structures.(export_obj @ (new attribute_mapper)#structure s @ export_root_obj)
+
+let () = Driver.register_transformation Consts.ppx_name ~impl:expand_expjs
