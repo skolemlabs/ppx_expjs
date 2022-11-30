@@ -2,6 +2,7 @@
  (name ppx_expjs)
  (public_name ppx_expjs)
  (kind ppx_rewriter)
+ (ppx_runtime_libraries ppx_expjs_runtime)
  (preprocess
   (pps metaquot.ppx))
- (libraries ppxlib js_of_ocaml ppx_expjs_runtime))
+ (libraries ppxlib js_of_ocaml))
