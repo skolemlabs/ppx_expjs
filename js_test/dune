@@ -1,6 +1,5 @@
 (executables
  (names const func)
- (libraries ppx_expjs_runtime)
  (modes js)
  (preprocess
   (pps ppx_expjs)))
