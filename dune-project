@@ -5,6 +5,8 @@
 
 (generate_opam_files true)
 
+(version 1.0.0)
+
 (authors "Zach Baylin <zach@skolem.tech>")
 (maintainers "Zach Baylin <zach@skolem.tech>")
 
