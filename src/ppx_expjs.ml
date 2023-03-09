@@ -1,7 +1,14 @@
 open Ppxlib
 open Ast_builder.Default
 
-type config = { exp_name : string; strict : bool }
+type config = {
+  exp_name : string;  (** The name to export the function as. *)
+  strict : bool;
+      (** Whether or not strict mode is enabled, which enforces all variables have conversions *)
+  export : bool;  (** Whether or not to export the value *)
+  local_bind : bool;
+      (** Whether or not to create a local binding for the embellished value *)
+}
 
 exception Unsupported_pattern of pattern
 exception Unsupported_expression of expression
@@ -23,9 +30,20 @@ let () =
         Some (Format.asprintf "Unknown_to_js: %s @ %a" txt Location.print loc)
     | _ -> None)
 
+module Utils = struct
+  let cons_opt maybe_hd tl =
+    match maybe_hd with Some hd -> hd :: tl | None -> tl
+end
+
 module Consts = struct
   let ppx_name = "expjs"
   let conv_attr_name = "expjs.conv"
+end
+
+module Defaults = struct
+  let strict = false
+  let export = true
+  let local_bind = false
 end
 
 module Structures = struct
@@ -94,20 +112,65 @@ let get_var_name vb =
   helper vb.pvb_pat
 
 (** Determine what we should export the value as. If the user has specified a [name], we use that. Otherwise, it's just the function name *)
-let get_exp_name = function
-  | {
-      pvb_attributes =
-        [ { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } ];
-      _;
-    }
-    when contains_field e "name" -> (
-      match get_field e "name" with
-      | { pexp_desc = Pexp_constant (Pconst_string (name, _, _)); _ } -> name
-      | e -> raise (Unsupported_expression e))
-  | vb -> get_var_name vb
+let get_exp_name e =
+  if contains_field e "name" then
+    match get_field e "name" with
+    | { pexp_desc = Pexp_constant (Pconst_string (name, _, _)); _ } -> Some name
+    | e -> raise (Unsupported_expression e)
+  else None
 
 (** Determine if we should be using strict mode. In strict mode, all types must explicitly have convertors specified. *)
-let get_strict = function
+let get_strict e =
+  if contains_field e "strict" then
+    match get_field e "strict" with
+    | [%expr true] -> true
+    | [%expr false] -> false
+    | e -> raise (Unsupported_expression e)
+  else Defaults.strict
+
+(** Determine if we should export the value. The default is [true]. *)
+let get_export e =
+  if contains_field e "export" then
+    match get_field e "export" with
+    | [%expr true] -> true
+    | [%expr false] -> false
+    | e -> raise (Unsupported_expression e)
+  else Defaults.export
+
+(** Determine if we should be using strict mode. In strict mode, all types must explicitly have convertors specified. *)
+let get_local_bind e =
+  if contains_field e "local_bind" then
+    match get_field e "local_bind" with
+    | [%expr true] -> true
+    | [%expr false] -> false
+    | e -> raise (Unsupported_expression e)
+  else Defaults.local_bind
+
+let get_config vb =
+  match vb with
+  | {
+   pvb_attributes =
+     [ { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } ];
+   _;
+  } ->
+      let exp_name =
+        get_exp_name e |> function Some n -> n | None -> get_var_name vb
+      in
+      {
+        exp_name;
+        strict = get_strict e;
+        export = get_export e;
+        local_bind = get_local_bind e;
+      }
+  | _ ->
+      {
+        exp_name = get_var_name vb;
+        strict = Defaults.strict;
+        export = Defaults.export;
+        local_bind = Defaults.local_bind;
+      }
+
+let get_export = function
   | {
       pvb_attributes =
         [ { attr_payload = PStr [ { pstr_desc = Pstr_eval (e, _); _ } ]; _ } ];
@@ -119,8 +182,6 @@ let get_strict = function
       | [%expr false] -> false
       | e -> raise (Unsupported_expression e))
   | _ -> false
-
-let get_config vb = { exp_name = get_exp_name vb; strict = get_strict vb }
 
 (** Extracts the custom convertor from the attribute, and fails if the payload is malformed. *)
 let get_custom_conv = function
@@ -318,6 +379,10 @@ let build_fun fname args conv =
   let body = build_body fname args conv in
   prototype body
 
+let build_local_bind ~loc fname fexpr =
+  let pat = ppat_var ~loc { txt = fname ^ "_js"; loc } in
+  value_binding ~loc ~pat ~expr:fexpr
+
 class attribute_mapper =
   object
     inherit Ast_traverse.map as super
@@ -392,7 +457,9 @@ class attribute_mapper =
                     (fun acc vb ->
                       if contains_attr vb.pvb_attributes Consts.ppx_name then
                         let fname = get_var_name vb in
-                        let { strict; exp_name } = get_config vb in
+                        let { strict; exp_name; export = export'; local_bind } =
+                          get_config vb
+                        in
                         let args, conv =
                           get_args_and_conv ~strict ~fname vb.pvb_expr
                             vb.pvb_pat []
@@ -401,9 +468,17 @@ class attribute_mapper =
                         let export = Expressions.export exp_name fexpr in
                         let loc = get_loc () in
                         let expvb =
-                          value_binding ~loc ~pat:[%pat? ()] ~expr:export
+                          if export' then
+                            Some
+                              (value_binding ~loc ~pat:[%pat? ()] ~expr:export)
+                          else None
                         in
-                        expvb :: acc
+                        let localvb =
+                          if local_bind then
+                            Some (build_local_bind ~loc fname fexpr)
+                          else None
+                        in
+                        Utils.(cons_opt localvb @@ cons_opt expvb acc)
                       else acc)
                     [] vbs
                 in

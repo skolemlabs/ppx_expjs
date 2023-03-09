@@ -16,6 +16,10 @@ test('cnst.some_four is 4', () => {
   expect(cnst.some_four).toBe(4);
 });
 
+test('cnst.dont_export is not exported', () => {
+  expect(cnst.dont_export).toBe(undefined);
+});
+
 test('cnst.Caml_module.my_str is "Caml_module.my_str"', () => {
   expect(cnst.Caml_module.my_str).toBe("Caml_module.my_str");
 });
