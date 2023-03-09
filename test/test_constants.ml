@@ -201,3 +201,34 @@ let () =
       let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
   in
   test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__ ~title:"Don't export unit (export = false)"
+    ~tags:[ "constant"; "to_js"; "unit" ]
+  @@ fun () ->
+  let to_transform = [%str let x : unit = () [@@expjs { export = false }]] in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
+      let x : unit = () [@@expjs { export = false }]
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
+  in
+  test_structures ~expected ~received:transformed
+
+let () =
+  Test.register ~__FILE__ ~title:"Locally bind int"
+    ~tags:[ "constant"; "to_js"; "unit" ]
+  @@ fun () ->
+  let to_transform =
+    [%str let x : int = 1 [@@expjs { local_bind = true; export = false }]]
+  in
+  let transformed = Ppx_expjs.expand_expjs to_transform in
+  let expected =
+    [%str
+      let __ppx_expjs_export = Js_of_ocaml.Js.Unsafe.obj [||]
+      let x : int = 1 [@@expjs { local_bind = true; export = false }]
+      let x_js = Ppx_expjs_runtime.int_to_js x
+      let () = Js_of_ocaml.Js.export_all __ppx_expjs_export]
+  in
+  test_structures ~expected ~received:transformed
